@@ -34,6 +34,7 @@ type JournalEntry = {
 type JournalEntries = Record<string, JournalEntry>;
 
 const STORAGE_KEY = "benz-crypto-journal";
+const BUY_AMOUNT_KEY = "benz-buy-amount";
 const MONTHS = [
   "Januari",
   "Februari",
@@ -75,6 +76,12 @@ function formatShortRupiah(value: number) {
   return `${sign}Rp ${absolute.toLocaleString("id-ID")}`;
 }
 
+function formatBuyAmount(value: number) {
+  if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(1).replace(".0", "")} jt`;
+  if (value >= 1000) return `Rp ${Math.round(value / 1000)} rb`;
+  return `Rp ${value.toLocaleString("id-ID")}`;
+}
+
 function typeLabel(type: EntryType) {
   return type === "profit" ? "Profit" : "Loss";
 }
@@ -111,10 +118,20 @@ export default function Index() {
   const [note, setNote] = useState("Profit trading harian");
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [buyAmount, setBuyAmount] = useState(() => {
+    const saved = Number(localStorage.getItem(BUY_AMOUNT_KEY));
+    return saved > 0 ? saved : 5000000;
+  });
+  const [buyInput, setBuyInput] = useState("");
+  const [isEditingBuy, setIsEditingBuy] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   }, [entries]);
+
+  useEffect(() => {
+    localStorage.setItem(BUY_AMOUNT_KEY, String(buyAmount));
+  }, [buyAmount]);
 
   const selectedEntry = entries[selectedDate];
   const calendarCells = useMemo(() => {
@@ -194,6 +211,17 @@ export default function Index() {
     setNote("");
   }
 
+  function startBuyEdit() {
+    setBuyInput(String(buyAmount));
+    setIsEditingBuy(true);
+  }
+
+  function saveBuyAmount() {
+    const nextAmount = Number(buyInput);
+    if (nextAmount > 0) setBuyAmount(nextAmount);
+    setIsEditingBuy(false);
+  }
+
   const selectedDay = Number(selectedDate.slice(-2));
   const selectedYear = Number(selectedDate.slice(0, 4));
   const selectedMonthLabel = MONTHS[Number(selectedDate.slice(5, 7)) - 1];
@@ -246,7 +274,11 @@ export default function Index() {
             </div>
             <div className="hidden items-center gap-2 text-xs text-muted sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-mint" /> Semua catatan tersimpan lokal</div>
             <div className="ml-auto flex items-center gap-3">
-              <div className="rounded-full border border-[#3e594d] bg-[#17231f] px-3.5 py-2 text-xs font-bold text-lime sm:px-4"><span className="mr-1.5 text-muted">BUY</span> Rp 5 jt</div>
+              {isEditingBuy ? <form onSubmit={(event) => { event.preventDefault(); saveBuyAmount(); }} className="flex items-center rounded-full border border-mint bg-[#17231f] px-3 py-1.5 text-xs font-bold text-lime" title="Atur nominal BUY">
+                <span className="mr-1.5 text-muted">BUY</span>
+                <span className="mr-1 text-muted">Rp</span>
+                <input autoFocus value={buyInput} onChange={(event) => setBuyInput(event.target.value.replace(/[^0-9]/g, ""))} onBlur={saveBuyAmount} inputMode="numeric" aria-label="Nominal BUY" className="w-[76px] bg-transparent py-0.5 text-right text-xs font-bold text-lime outline-none" />
+              </form> : <button onClick={startBuyEdit} className="rounded-full border border-[#3e594d] bg-[#17231f] px-3.5 py-2 text-xs font-bold text-lime transition hover:border-mint sm:px-4" title="Klik untuk mengubah nominal BUY"><span className="mr-1.5 text-muted">BUY</span> {formatBuyAmount(buyAmount)}</button>}
               <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#d9f59c] text-xs font-black text-ink sm:flex">BZ</div>
             </div>
           </header>
