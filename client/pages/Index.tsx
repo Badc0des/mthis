@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  Download,
   BookOpen,
   CalendarDays,
   Check,
@@ -15,11 +16,12 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
+  Upload,
   WalletCards,
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 
 type EntryType = "profit" | "loss";
 
@@ -32,6 +34,14 @@ type JournalEntry = {
 };
 
 type JournalEntries = Record<string, JournalEntry>;
+
+type BackupFile = {
+  app: "BENZ Crypto Journal";
+  version: 1;
+  exportedAt: string;
+  entries: JournalEntries;
+  buyAmount: number;
+};
 
 const STORAGE_KEY = "benz-crypto-journal";
 const BUY_AMOUNT_KEY = "benz-buy-amount";
@@ -51,14 +61,6 @@ const MONTHS = [
 ];
 const WEEKDAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
 const YEARS = [2026, 2027, 2028, 2029, 2030];
-const initialEntries: JournalEntries = {
-  "2026-01-03": { type: "profit", amount: 425000, token: "BTC/IDR", maintenance: false, note: "Take profit BTC" },
-  "2026-01-08": { type: "loss", amount: -180000, token: "SOL/IDR", maintenance: false, note: "Cut loss altcoin" },
-  "2026-01-12": { type: "profit", amount: 680000, token: "BTC/IDR", maintenance: false, note: "Profit trading harian" },
-  "2026-01-15": { type: "loss", amount: -90000, token: "ADA/IDR", maintenance: true, note: "Loss saat token maintenance" },
-  "2026-01-21": { type: "profit", amount: 320000, token: "ETH/IDR", maintenance: false, note: "Swing trade ETH" },
-};
-
 function dateKey(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -86,23 +88,27 @@ function typeLabel(type: EntryType) {
   return type === "profit" ? "Profit" : "Loss";
 }
 
+function normalizeEntries(input: unknown): JournalEntries {
+  if (!input || typeof input !== "object") return {};
+  return Object.fromEntries(Object.entries(input as Record<string, unknown>).flatMap(([key, rawEntry]) => {
+    if (!rawEntry || typeof rawEntry !== "object") return [];
+    const entry = rawEntry as { type?: string; amount?: number; token?: string; maintenance?: boolean; note?: string };
+    return [[key, {
+      type: entry.type === "loss" ? "loss" : "profit",
+      amount: Number(entry.amount) || 0,
+      token: entry.token ?? "",
+      maintenance: Boolean(entry.maintenance) || entry.type === "maintenance",
+      note: entry.note ?? "",
+    }]];
+  }));
+}
+
 function loadEntries(): JournalEntries {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return initialEntries;
-    const parsed = JSON.parse(saved) as Record<string, { type?: string; amount?: number; token?: string; maintenance?: boolean; note?: string }>;
-    return {
-      ...initialEntries,
-      ...Object.fromEntries(Object.entries(parsed).map(([key, entry]) => [key, {
-        type: entry.type === "loss" ? "loss" : "profit",
-        amount: Number(entry.amount) || 0,
-        token: entry.token ?? "",
-        maintenance: Boolean(entry.maintenance) || entry.type === "maintenance",
-        note: entry.note ?? "",
-      }])),
-    };
+    return saved ? normalizeEntries(JSON.parse(saved)) : {};
   } catch {
-    return initialEntries;
+    return {};
   }
 }
 
@@ -118,6 +124,7 @@ export default function Index() {
   const [note, setNote] = useState("Profit trading harian");
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [backupNotice, setBackupNotice] = useState("");
   const [buyAmount, setBuyAmount] = useState(() => {
     const saved = Number(localStorage.getItem(BUY_AMOUNT_KEY));
     return saved > 0 ? saved : 5000000;
@@ -222,6 +229,66 @@ export default function Index() {
     setIsEditingBuy(false);
   }
 
+  function saveBackup() {
+    const backup: BackupFile = {
+      app: "BENZ Crypto Journal",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      entries,
+      buyAmount,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `benz-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setBackupNotice("Backup berhasil disimpan");
+    window.setTimeout(() => setBackupNotice(""), 2400);
+  }
+
+  function handleRestore(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result)) as Partial<BackupFile>;
+        if (parsed.app !== "BENZ Crypto Journal" || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== "object" || Array.isArray(parsed.entries)) throw new Error("Invalid backup");
+        if (!window.confirm("Pulihkan backup? Data lokal di device ini akan diganti dengan isi backup.")) return;
+        const restoredEntries = normalizeEntries(parsed.entries);
+        setEntries(restoredEntries);
+        const restoredBuyAmount = Number(parsed.buyAmount);
+        if (restoredBuyAmount > 0) setBuyAmount(restoredBuyAmount);
+
+        const firstDate = Object.keys(restoredEntries).sort()[0];
+        if (firstDate) {
+          const firstEntry = restoredEntries[firstDate];
+          setSelectedDate(firstDate);
+          setYear(Number(firstDate.slice(0, 4)));
+          setMonth(Number(firstDate.slice(5, 7)) - 1);
+          setEntryType(firstEntry.type);
+          setAmount(String(Math.abs(firstEntry.amount)));
+          setToken(firstEntry.token);
+          setMaintenance(firstEntry.maintenance);
+          setNote(firstEntry.note);
+        } else {
+          setAmount("");
+          setToken("");
+          setMaintenance(false);
+          setNote("");
+        }
+        setBackupNotice("Data berhasil dipulihkan");
+      } catch {
+        setBackupNotice("File backup tidak valid");
+      }
+      window.setTimeout(() => setBackupNotice(""), 2400);
+    };
+    reader.readAsText(file);
+  }
+
   const selectedDay = Number(selectedDate.slice(-2));
   const selectedYear = Number(selectedDate.slice(0, 4));
   const selectedMonthLabel = MONTHS[Number(selectedDate.slice(5, 7)) - 1];
@@ -261,8 +328,8 @@ export default function Index() {
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#243d35] text-mint"><Sparkles size={15} /></span>
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">2026 — 2030</span>
             </div>
-            <p className="text-xs font-semibold text-cloud">Jaga ritme tradingmu.</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted">Catat setiap keputusan. Lihat pola. Tumbuh konsisten.</p>
+            <p className="text-xs font-semibold text-cloud">Data aman di device ini.</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">Simpan backup sebelum berpindah device.</p>
           </div>
         </aside>
 
@@ -272,7 +339,7 @@ export default function Index() {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-mint text-ink"><WalletCards size={18} /></div>
               <span className="font-display text-sm font-bold">BENZ</span>
             </div>
-            <div className="hidden items-center gap-2 text-xs text-muted sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-mint" /> Semua catatan tersimpan lokal</div>
+            <div className="hidden items-center gap-2 text-xs text-muted sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-mint" /> Lokal · backup manual</div>
             <div className="ml-auto flex items-center gap-3">
               {isEditingBuy ? <form onSubmit={(event) => { event.preventDefault(); saveBuyAmount(); }} className="flex items-center rounded-full border border-mint bg-[#17231f] px-3 py-1.5 text-xs font-bold text-lime" title="Atur nominal BUY">
                 <span className="mr-1.5 text-muted">BUY</span>
@@ -289,6 +356,14 @@ export default function Index() {
                 <p className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.19em] text-mint"><span className="h-px w-6 bg-mint" /> Trading diary</p>
                 <h1 className="font-display text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-cloud sm:text-[46px]">Maintenance <span className="text-mint">Event</span></h1>
                 <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">Catat profit &amp; loss token Indodax.</p>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <button onClick={saveBackup} className="flex items-center gap-2 rounded-lg bg-mint px-3 py-2 text-[11px] font-black text-ink transition hover:bg-[#87edcd]"><Download size={14} /> Simpan backup</button>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-[#18211e] px-3 py-2 text-[11px] font-bold text-muted transition hover:border-mint hover:text-cloud">
+                    <Upload size={14} /> Pulihkan backup
+                    <input type="file" accept="application/json,.json" onChange={handleRestore} className="hidden" />
+                  </label>
+                  {backupNotice && <span className="text-[11px] font-semibold text-mint">{backupNotice}</span>}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[560px]">
                 <StatCard label="Net bulan ini" value={formatShortRupiah(monthlyNet)} accent={monthlyNet >= 0 ? "mint" : "coral"} icon={<BarChart3 size={15} />} />
