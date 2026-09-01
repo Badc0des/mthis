@@ -381,7 +381,13 @@ export default function Index() {
                     <div className="mt-2 flex items-center gap-3">
                       <h2 className="font-display text-2xl font-bold tracking-[-0.03em]">{MONTHS[month]} <span className="text-mint">{year}</span></h2>
                       <div className="relative">
-                        <select value={year} onChange={(event) => { const nextYear = Number(event.target.value); setYear(nextYear); selectDate(dateKey(nextYear, month, 1)); }} className="appearance-none rounded-lg border border-line bg-[#18211e] py-1.5 pl-3 pr-8 text-xs font-bold text-muted outline-none transition focus:border-mint">
+                        <select aria-label="Pilih bulan" value={month} onChange={(event) => { const nextMonth = Number(event.target.value); setMonth(nextMonth); selectDate(dateKey(year, nextMonth, 1)); }} className="max-w-[105px] appearance-none rounded-lg border border-line bg-[#18211e] py-1.5 pl-3 pr-8 text-xs font-bold text-muted outline-none transition focus:border-mint">
+                          {MONTHS.map((item, index) => <option key={item} value={index}>{item}</option>)}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted" size={13} />
+                      </div>
+                      <div className="relative">
+                        <select aria-label="Pilih tahun" value={year} onChange={(event) => { const nextYear = Number(event.target.value); setYear(nextYear); selectDate(dateKey(nextYear, month, 1)); }} className="appearance-none rounded-lg border border-line bg-[#18211e] py-1.5 pl-3 pr-8 text-xs font-bold text-muted outline-none transition focus:border-mint">
                           {YEARS.map((item) => <option key={item} value={item}>{item}</option>)}
                         </select>
                         <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted" size={13} />
