@@ -70,8 +70,8 @@ function formatRupiah(value: number, withSign = false) {
   return `${sign}Rp ${Math.abs(value).toLocaleString("id-ID")}`;
 }
 
-function formatShortRupiah(value: number) {
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+function formatShortRupiah(value: number, withSign = true) {
+  const sign = withSign ? (value > 0 ? "+" : value < 0 ? "−" : "") : "";
   const absolute = Math.abs(value);
   if (absolute >= 1000000) return `${sign}Rp ${(absolute / 1000000).toFixed(1).replace(".0", "")} jt`;
   if (absolute >= 1000) return `${sign}Rp ${Math.round(absolute / 1000)} rb`;
@@ -166,7 +166,13 @@ export default function Index() {
   const monthlyLoss = monthlyEntries.reduce((sum, [, entry]) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
   const monthlyNet = monthlyProfit - monthlyLoss;
   const maintenanceCount = monthlyEntries.filter(([, entry]) => entry.maintenance).length;
-  const yearlyNet = Object.values(entries).reduce((sum, entry) => sum + entry.amount, 0);
+  const annualStats = useMemo(() => YEARS.map((item) => {
+    const records = Object.entries(entries).filter(([key]) => key.startsWith(`${item}-`));
+    const profit = records.reduce((sum, [, entry]) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
+    const loss = records.reduce((sum, [, entry]) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
+    return { year: item, profit, loss, net: profit - loss, count: records.length };
+  }), [entries]);
+  const yearlyNet = annualStats.reduce((sum, item) => sum + item.net, 0);
 
   function selectDate(key: string) {
     setSelectedDate(key);
@@ -372,6 +378,26 @@ export default function Index() {
                 <StatCard label="Token maintenance" value={`${maintenanceCount} token`} accent="gold" icon={<Wrench size={15} />} />
               </div>
             </div>
+
+            <section className="mb-5 rounded-2xl border border-line bg-panel p-4 sm:p-5">
+              <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Ringkasan tahunan</p>
+                  <h2 className="mt-1 font-display text-xl font-bold tracking-[-0.03em]">Total tahun ke tahun</h2>
+                </div>
+                <div className="rounded-xl border border-[#3e594d] bg-[#17231f] px-4 py-2.5 sm:text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Total keseluruhan · 2026—2030</p>
+                  <p className={`mt-1 font-display text-lg font-bold ${yearlyNet >= 0 ? "text-mint" : "text-coral"}`}>{formatShortRupiah(yearlyNet)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {annualStats.map((item) => <button key={item.year} onClick={() => { setYear(item.year); selectDate(dateKey(item.year, month, 1)); }} className={`rounded-xl border px-3 py-3 text-left transition ${year === item.year ? "border-mint bg-[#1b332c]" : "border-line bg-[#101714] hover:border-[#4b6759]"}`}>
+                  <div className="flex items-center justify-between"><span className={`font-display text-sm font-bold ${year === item.year ? "text-mint" : "text-cloud"}`}>{item.year}</span><span className="text-[10px] text-muted">{item.count} catatan</span></div>
+                  <p className={`mt-2 truncate text-sm font-bold ${item.net >= 0 ? "text-mint" : "text-coral"}`}>{formatShortRupiah(item.net)}</p>
+                  <p className="mt-1 text-[10px] text-muted">Profit {formatShortRupiah(item.profit)} · Loss {formatShortRupiah(item.loss, false)}</p>
+                </button>)}
+              </div>
+            </section>
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
               <div className="rounded-2xl border border-line bg-panel p-4 sm:p-6">
