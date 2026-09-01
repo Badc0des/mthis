@@ -21,12 +21,14 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-type EntryType = "profit" | "loss" | "maintenance";
+type EntryType = "profit" | "loss";
 
 type JournalEntry = {
   type: EntryType;
   amount: number;
   note: string;
+  token: string;
+  maintenance: boolean;
 };
 
 type JournalEntries = Record<string, JournalEntry>;
@@ -49,11 +51,11 @@ const MONTHS = [
 const WEEKDAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
 const YEARS = [2026, 2027, 2028, 2029, 2030];
 const initialEntries: JournalEntries = {
-  "2026-01-03": { type: "profit", amount: 425000, note: "Take profit BTC" },
-  "2026-01-08": { type: "loss", amount: -180000, note: "Cut loss altcoin" },
-  "2026-01-12": { type: "profit", amount: 680000, note: "Profit trading harian" },
-  "2026-01-15": { type: "maintenance", amount: 0, note: "Maintenance Indodax" },
-  "2026-01-21": { type: "profit", amount: 320000, note: "Swing trade ETH" },
+  "2026-01-03": { type: "profit", amount: 425000, token: "BTC/IDR", maintenance: false, note: "Take profit BTC" },
+  "2026-01-08": { type: "loss", amount: -180000, token: "SOL/IDR", maintenance: false, note: "Cut loss altcoin" },
+  "2026-01-12": { type: "profit", amount: 680000, token: "BTC/IDR", maintenance: false, note: "Profit trading harian" },
+  "2026-01-15": { type: "loss", amount: -90000, token: "ADA/IDR", maintenance: true, note: "Loss saat token maintenance" },
+  "2026-01-21": { type: "profit", amount: 320000, token: "ETH/IDR", maintenance: false, note: "Swing trade ETH" },
 };
 
 function dateKey(year: number, month: number, day: number) {
@@ -74,23 +76,38 @@ function formatShortRupiah(value: number) {
 }
 
 function typeLabel(type: EntryType) {
-  return type === "profit" ? "Profit" : type === "loss" ? "Loss" : "Maintenance";
+  return type === "profit" ? "Profit" : "Loss";
+}
+
+function loadEntries(): JournalEntries {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return initialEntries;
+    const parsed = JSON.parse(saved) as Record<string, { type?: string; amount?: number; token?: string; maintenance?: boolean; note?: string }>;
+    return {
+      ...initialEntries,
+      ...Object.fromEntries(Object.entries(parsed).map(([key, entry]) => [key, {
+        type: entry.type === "loss" ? "loss" : "profit",
+        amount: Number(entry.amount) || 0,
+        token: entry.token ?? "",
+        maintenance: Boolean(entry.maintenance) || entry.type === "maintenance",
+        note: entry.note ?? "",
+      }])),
+    };
+  } catch {
+    return initialEntries;
+  }
 }
 
 export default function Index() {
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(0);
   const [selectedDate, setSelectedDate] = useState("2026-01-12");
-  const [entries, setEntries] = useState<JournalEntries>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? { ...initialEntries, ...JSON.parse(saved) } : initialEntries;
-    } catch {
-      return initialEntries;
-    }
-  });
+  const [entries, setEntries] = useState<JournalEntries>(loadEntries);
   const [entryType, setEntryType] = useState<EntryType>("profit");
   const [amount, setAmount] = useState("680000");
+  const [token, setToken] = useState("BTC/IDR");
+  const [maintenance, setMaintenance] = useState(false);
   const [note, setNote] = useState("Profit trading harian");
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -124,7 +141,7 @@ export default function Index() {
   const monthlyProfit = monthlyEntries.reduce((sum, [, entry]) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
   const monthlyLoss = monthlyEntries.reduce((sum, [, entry]) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
   const monthlyNet = monthlyProfit - monthlyLoss;
-  const maintenanceCount = monthlyEntries.filter(([, entry]) => entry.type === "maintenance").length;
+  const maintenanceCount = monthlyEntries.filter(([, entry]) => entry.maintenance).length;
   const yearlyNet = Object.values(entries).reduce((sum, entry) => sum + entry.amount, 0);
 
   function selectDate(key: string) {
@@ -132,6 +149,8 @@ export default function Index() {
     const current = entries[key];
     setEntryType(current?.type ?? "profit");
     setAmount(current ? String(Math.abs(current.amount)) : "");
+    setToken(current?.token ?? "");
+    setMaintenance(current?.maintenance ?? false);
     setNote(current?.note ?? "");
     setIsMobilePanelOpen(true);
   }
@@ -156,8 +175,8 @@ export default function Index() {
 
   function saveEntry() {
     const numericAmount = Number(amount) || 0;
-    const signedAmount = entryType === "loss" ? -Math.abs(numericAmount) : entryType === "maintenance" ? 0 : Math.abs(numericAmount);
-    setEntries((current) => ({ ...current, [selectedDate]: { type: entryType, amount: signedAmount, note: note.trim() } }));
+    const signedAmount = entryType === "loss" ? -Math.abs(numericAmount) : Math.abs(numericAmount);
+    setEntries((current) => ({ ...current, [selectedDate]: { type: entryType, amount: signedAmount, token: token.trim().toUpperCase(), maintenance, note: note.trim() } }));
     setSavedNotice(true);
     window.setTimeout(() => setSavedNotice(false), 1800);
   }
@@ -170,10 +189,13 @@ export default function Index() {
     });
     setEntryType("profit");
     setAmount("");
+    setToken("");
+    setMaintenance(false);
     setNote("");
   }
 
   const selectedDay = Number(selectedDate.slice(-2));
+  const selectedYear = Number(selectedDate.slice(0, 4));
   const selectedMonthLabel = MONTHS[Number(selectedDate.slice(5, 7)) - 1];
 
   return (
@@ -234,13 +256,13 @@ export default function Index() {
               <div>
                 <p className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.19em] text-mint"><span className="h-px w-6 bg-mint" /> Trading diary</p>
                 <h1 className="font-display text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-cloud sm:text-[46px]">Catat. Evaluasi.<br /><span className="text-mint">Tumbuh.</span></h1>
-                <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">Satu tempat untuk mencatat perjalanan profit, loss, dan maintenance Indodax kamu.</p>
+                <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">Satu tempat untuk mencatat profit dan loss dari token-token yang kamu tradingkan di Indodax.</p>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[560px]">
                 <StatCard label="Net bulan ini" value={formatShortRupiah(monthlyNet)} accent={monthlyNet >= 0 ? "mint" : "coral"} icon={<BarChart3 size={15} />} />
                 <StatCard label="Total profit" value={formatShortRupiah(monthlyProfit)} accent="mint" icon={<TrendingUp size={15} />} />
                 <StatCard label="Total loss" value={formatShortRupiah(monthlyLoss)} accent="coral" icon={<TrendingDown size={15} />} />
-                <StatCard label="Maintenance" value={`${maintenanceCount} event`} accent="gold" icon={<Wrench size={15} />} />
+                <StatCard label="Token maintenance" value={`${maintenanceCount} token`} accent="gold" icon={<Wrench size={15} />} />
               </div>
             </div>
 
@@ -275,8 +297,8 @@ export default function Index() {
                     const isSelected = selectedDate === cell.key;
                     return <button key={cell.key} onClick={() => selectDate(cell.key)} className={`group relative min-h-[82px] border-b border-r border-line p-2 text-left transition sm:min-h-[104px] sm:p-3 ${!cell.isCurrentMonth ? "bg-[#101714]/50 text-[#52625a]" : "text-cloud hover:bg-[#1b2925]"} ${isSelected ? "bg-[#1d332c] ring-1 ring-inset ring-mint" : ""}`}>
                       <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${isSelected ? "bg-mint font-black text-ink" : cell.isCurrentMonth ? "text-cloud" : "text-[#52625a]"}`}>{cell.day}</span>
-                      {entry && <div className={`mt-2 truncate rounded-md px-1.5 py-1 text-[10px] font-bold sm:text-[11px] ${entry.type === "profit" ? "bg-[#183b32] text-mint" : entry.type === "loss" ? "bg-[#3c2428] text-coral" : "bg-[#3a3420] text-gold"}`}>
-                        {entry.type === "maintenance" ? "Maintenance" : formatShortRupiah(entry.amount)}
+                      {entry && <div className={`mt-2 truncate rounded-md px-1.5 py-1 text-[10px] font-bold sm:text-[11px] ${entry.type === "profit" ? "bg-[#183b32] text-mint" : "bg-[#3c2428] text-coral"}`}>
+                        <span className="block truncate text-[9px] opacity-70">{entry.token || "Token"}</span><span>{formatShortRupiah(entry.amount)}</span>{entry.maintenance && <span className="ml-1.5 rounded bg-[#4b4125] px-1 text-[9px] text-gold">M</span>}
                       </div>}
                       {!entry && cell.isCurrentMonth && <span className="absolute bottom-3 right-3 hidden text-muted opacity-0 transition group-hover:opacity-100 sm:block"><Plus size={14} /></span>}
                     </button>;
@@ -285,7 +307,7 @@ export default function Index() {
                 <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] font-medium text-muted">
                   <span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-mint" /> Profit</span>
                   <span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-coral" /> Loss</span>
-                  <span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-gold" /> Maintenance</span>
+                  <span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-gold" /> Token maintenance</span>
                   <span className="ml-auto hidden items-center gap-1.5 sm:flex"><Clock3 size={13} /> Data tersimpan otomatis</span>
                 </div>
               </div>
@@ -295,20 +317,28 @@ export default function Index() {
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Detail tanggal</p>
                     <h3 className="mt-1 font-display text-xl font-bold">{selectedDay} {selectedMonthLabel}</h3>
-                    <p className="mt-1 text-xs text-muted">{year} · Jurnal trading</p>
+                    <p className="mt-1 text-xs text-muted">{selectedYear} · Profit/loss harian</p>
                   </div>
                   <button onClick={() => setIsMobilePanelOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-[#22302a] hover:text-cloud xl:hidden" aria-label="Tutup detail"><X size={17} /></button>
                 </div>
 
                 <div className="mb-5 flex gap-1 rounded-xl bg-[#0e1512] p-1">
-                  {(["profit", "loss", "maintenance"] as EntryType[]).map((item) => <button key={item} onClick={() => { setEntryType(item); if (item === "maintenance") setAmount("0"); }} className={`flex-1 rounded-lg px-2 py-2 text-[10px] font-bold transition ${entryType === item ? item === "profit" ? "bg-[#21483b] text-mint" : item === "loss" ? "bg-[#4a282e] text-coral" : "bg-[#4b4125] text-gold" : "text-muted hover:text-cloud"}`}>{typeLabel(item)}</button>)}
+                  {(["profit", "loss"] as EntryType[]).map((item) => <button key={item} onClick={() => setEntryType(item)} className={`flex-1 rounded-lg px-2 py-2 text-[10px] font-bold transition ${entryType === item ? item === "profit" ? "bg-[#21483b] text-mint" : "bg-[#4a282e] text-coral" : "text-muted hover:text-cloud"}`}>{typeLabel(item)}</button>)}
                 </div>
 
                 <label className="mb-4 block">
-                  <span className="mb-2 block text-[11px] font-semibold text-muted">Nominal {entryType === "maintenance" && "(opsional)"}</span>
+                  <span className="mb-2 block text-[11px] font-semibold text-muted">Token</span>
+                  <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Contoh: BTC/IDR" className="w-full rounded-xl border border-line bg-[#101714] px-3 py-3 text-sm font-semibold uppercase text-cloud outline-none transition placeholder:normal-case placeholder:text-[#53645b] focus:border-mint" />
+                </label>
+                <label className="mb-4 flex cursor-pointer items-center gap-3 rounded-xl border border-[#4b4125] bg-[#2b2719] px-3 py-3">
+                  <input type="checkbox" checked={maintenance} onChange={(event) => setMaintenance(event.target.checked)} className="h-4 w-4 accent-[#e9c66a]" />
+                  <span><span className="block text-xs font-bold text-gold">Token sedang maintenance</span><span className="mt-0.5 block text-[10px] text-[#ae9860]">Profit/loss tetap tercatat selama status ini aktif.</span></span>
+                </label>
+                <label className="mb-5 block">
+                  <span className="mb-2 block text-[11px] font-semibold text-muted">Nominal</span>
                   <div className="flex items-center rounded-xl border border-line bg-[#101714] px-3 transition focus-within:border-mint">
                     <span className="mr-2 text-xs text-muted">Rp</span>
-                    <input value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} disabled={entryType === "maintenance"} inputMode="numeric" placeholder="0" className="w-full bg-transparent py-3 text-sm font-semibold text-cloud outline-none placeholder:text-[#53645b] disabled:opacity-40" />
+                    <input value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="0" className="w-full bg-transparent py-3 text-sm font-semibold text-cloud outline-none placeholder:text-[#53645b]" />
                   </div>
                 </label>
                 <label className="mb-5 block">
