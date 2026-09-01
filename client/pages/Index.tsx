@@ -255,8 +255,8 @@ export default function Index() {
             <div className="mb-9 flex flex-col justify-between gap-6 xl:flex-row xl:items-end">
               <div>
                 <p className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.19em] text-mint"><span className="h-px w-6 bg-mint" /> Trading diary</p>
-                <h1 className="font-display text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-cloud sm:text-[46px]">Catat. Evaluasi.<br /><span className="text-mint">Tumbuh.</span></h1>
-                <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">Satu tempat untuk mencatat profit dan loss dari token-token yang kamu tradingkan di Indodax.</p>
+                <h1 className="font-display text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-cloud sm:text-[46px]">Maintenance <span className="text-mint">Event</span></h1>
+                <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">Catat profit &amp; loss token Indodax.</p>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[560px]">
                 <StatCard label="Net bulan ini" value={formatShortRupiah(monthlyNet)} accent={monthlyNet >= 0 ? "mint" : "coral"} icon={<BarChart3 size={15} />} />
