@@ -33,7 +33,7 @@ type JournalEntry = {
   maintenance: boolean;
 };
 
-type JournalEntries = Record<string, JournalEntry>;
+type JournalEntries = Record<string, JournalEntry[]>;
 
 type BackupFile = {
   app: "BENZ Crypto Journal";
@@ -88,18 +88,25 @@ function typeLabel(type: EntryType) {
   return type === "profit" ? "Profit" : "Loss";
 }
 
+function normalizeEntry(input: unknown): JournalEntry | null {
+  if (!input || typeof input !== "object") return null;
+  const entry = input as { type?: string; amount?: number; token?: string; maintenance?: boolean; note?: string };
+  return {
+    type: entry.type === "loss" ? "loss" : "profit",
+    amount: Number(entry.amount) || 0,
+    token: entry.token ?? "",
+    maintenance: Boolean(entry.maintenance) || entry.type === "maintenance",
+    note: entry.note ?? "",
+  };
+}
+
 function normalizeEntries(input: unknown): JournalEntries {
   if (!input || typeof input !== "object") return {};
-  return Object.fromEntries(Object.entries(input as Record<string, unknown>).flatMap(([key, rawEntry]) => {
-    if (!rawEntry || typeof rawEntry !== "object") return [];
-    const entry = rawEntry as { type?: string; amount?: number; token?: string; maintenance?: boolean; note?: string };
-    return [[key, {
-      type: entry.type === "loss" ? "loss" : "profit",
-      amount: Number(entry.amount) || 0,
-      token: entry.token ?? "",
-      maintenance: Boolean(entry.maintenance) || entry.type === "maintenance",
-      note: entry.note ?? "",
-    }]];
+  return Object.fromEntries(Object.entries(input as Record<string, unknown>).flatMap(([key, rawEntries]) => {
+    const entries = (Array.isArray(rawEntries) ? rawEntries : [rawEntries])
+      .map(normalizeEntry)
+      .filter((entry): entry is JournalEntry => entry !== null);
+    return entries.length ? [[key, entries]] : [];
   }));
 }
 
@@ -116,6 +123,7 @@ export default function Index() {
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(0);
   const [selectedDate, setSelectedDate] = useState("2026-01-12");
+  const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(null);
   const [entries, setEntries] = useState<JournalEntries>(loadEntries);
   const [entryType, setEntryType] = useState<EntryType>("profit");
   const [amount, setAmount] = useState("680000");
@@ -140,7 +148,8 @@ export default function Index() {
     localStorage.setItem(BUY_AMOUNT_KEY, String(buyAmount));
   }, [buyAmount]);
 
-  const selectedEntry = entries[selectedDate];
+  const selectedDateEntries = entries[selectedDate] ?? [];
+  const selectedEntry = selectedEntryIndex === null ? undefined : selectedDateEntries[selectedEntryIndex];
   const calendarCells = useMemo(() => {
     const firstDayMonday = (new Date(year, month, 1).getDay() + 6) % 7;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -159,30 +168,46 @@ export default function Index() {
   }, [month, year]);
 
   const monthlyEntries = useMemo(
-    () => Object.entries(entries).filter(([key]) => key.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)),
+    () => Object.entries(entries)
+      .filter(([key]) => key.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`))
+      .flatMap(([, dateEntries]) => dateEntries),
     [entries, month, year],
   );
-  const monthlyProfit = monthlyEntries.reduce((sum, [, entry]) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
-  const monthlyLoss = monthlyEntries.reduce((sum, [, entry]) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
+  const monthlyProfit = monthlyEntries.reduce((sum, entry) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
+  const monthlyLoss = monthlyEntries.reduce((sum, entry) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
   const monthlyNet = monthlyProfit - monthlyLoss;
-  const maintenanceCount = monthlyEntries.filter(([, entry]) => entry.maintenance).length;
+  const maintenanceCount = monthlyEntries.filter((entry) => entry.maintenance).length;
   const annualStats = useMemo(() => YEARS.map((item) => {
-    const records = Object.entries(entries).filter(([key]) => key.startsWith(`${item}-`));
-    const profit = records.reduce((sum, [, entry]) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
-    const loss = records.reduce((sum, [, entry]) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
+    const records = Object.entries(entries)
+      .filter(([key]) => key.startsWith(`${item}-`))
+      .flatMap(([, dateEntries]) => dateEntries);
+    const profit = records.reduce((sum, entry) => sum + (entry.type === "profit" ? entry.amount : 0), 0);
+    const loss = records.reduce((sum, entry) => sum + (entry.type === "loss" ? Math.abs(entry.amount) : 0), 0);
     return { year: item, profit, loss, net: profit - loss, count: records.length };
   }), [entries]);
   const yearlyNet = annualStats.reduce((sum, item) => sum + item.net, 0);
 
-  function selectDate(key: string) {
+  function selectDate(key: string, entryIndex = 0) {
     setSelectedDate(key);
-    const current = entries[key];
+    const dateEntries = entries[key] ?? [];
+    const nextIndex = dateEntries.length ? Math.min(entryIndex, dateEntries.length - 1) : null;
+    const current = nextIndex === null ? undefined : dateEntries[nextIndex];
+    setSelectedEntryIndex(nextIndex);
     setEntryType(current?.type ?? "profit");
     setAmount(current ? String(Math.abs(current.amount)) : "");
     setToken(current?.token ?? "");
     setMaintenance(current?.maintenance ?? false);
     setNote(current?.note ?? "");
     setIsMobilePanelOpen(true);
+  }
+
+  function startNewEntry() {
+    setSelectedEntryIndex(null);
+    setEntryType("profit");
+    setAmount("");
+    setToken("");
+    setMaintenance(false);
+    setNote("");
   }
 
   function changeMonth(direction: number) {
@@ -206,22 +231,33 @@ export default function Index() {
   function saveEntry() {
     const numericAmount = Number(amount) || 0;
     const signedAmount = entryType === "loss" ? -Math.abs(numericAmount) : Math.abs(numericAmount);
-    setEntries((current) => ({ ...current, [selectedDate]: { type: entryType, amount: signedAmount, token: token.trim().toUpperCase(), maintenance, note: note.trim() } }));
+    const nextEntry: JournalEntry = { type: entryType, amount: signedAmount, token: token.trim().toUpperCase(), maintenance, note: note.trim() };
+    const dateEntries = entries[selectedDate] ?? [];
+    setEntries((current) => {
+      const currentDateEntries = current[selectedDate] ?? [];
+      const nextDateEntries = selectedEntryIndex === null
+        ? [...currentDateEntries, nextEntry]
+        : currentDateEntries.map((entry, index) => index === selectedEntryIndex ? nextEntry : entry);
+      return { ...current, [selectedDate]: nextDateEntries };
+    });
+    if (selectedEntryIndex === null) setSelectedEntryIndex(dateEntries.length);
     setSavedNotice(true);
     window.setTimeout(() => setSavedNotice(false), 1800);
   }
 
   function deleteEntry() {
+    if (selectedEntryIndex === null) return;
     setEntries((current) => {
-      const next = { ...current };
-      delete next[selectedDate];
-      return next;
+      const currentDateEntries = current[selectedDate] ?? [];
+      const nextDateEntries = currentDateEntries.filter((_, index) => index !== selectedEntryIndex);
+      if (!nextDateEntries.length) {
+        const next = { ...current };
+        delete next[selectedDate];
+        return next;
+      }
+      return { ...current, [selectedDate]: nextDateEntries };
     });
-    setEntryType("profit");
-    setAmount("");
-    setToken("");
-    setMaintenance(false);
-    setNote("");
+    startNewEntry();
   }
 
   function startBuyEdit() {
