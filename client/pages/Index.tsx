@@ -307,8 +307,9 @@ export default function Index() {
 
         const firstDate = Object.keys(restoredEntries).sort()[0];
         if (firstDate) {
-          const firstEntry = restoredEntries[firstDate];
+          const firstEntry = restoredEntries[firstDate][0];
           setSelectedDate(firstDate);
+          setSelectedEntryIndex(0);
           setYear(Number(firstDate.slice(0, 4)));
           setMonth(Number(firstDate.slice(5, 7)) - 1);
           setEntryType(firstEntry.type);
@@ -317,6 +318,7 @@ export default function Index() {
           setMaintenance(firstEntry.maintenance);
           setNote(firstEntry.note);
         } else {
+          setSelectedEntryIndex(null);
           setAmount("");
           setToken("");
           setMaintenance(false);
@@ -468,14 +470,17 @@ export default function Index() {
                 </div>
                 <div className="grid grid-cols-7">
                   {calendarCells.map((cell) => {
-                    const entry = entries[cell.key];
+                    const dateEntries = entries[cell.key] ?? [];
                     const isSelected = selectedDate === cell.key;
                     return <button key={cell.key} onClick={() => selectDate(cell.key)} className={`group relative min-h-[82px] border-b border-r border-line p-2 text-left transition sm:min-h-[104px] sm:p-3 ${!cell.isCurrentMonth ? "bg-[#101714]/50 text-[#52625a]" : "text-cloud hover:bg-[#1b2925]"} ${isSelected ? "bg-[#1d332c] ring-1 ring-inset ring-mint" : ""}`}>
                       <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${isSelected ? "bg-mint font-black text-ink" : cell.isCurrentMonth ? "text-cloud" : "text-[#52625a]"}`}>{cell.day}</span>
-                      {entry && <div className={`mt-2 truncate rounded-md px-1.5 py-1 text-[10px] font-bold sm:text-[11px] ${entry.type === "profit" ? "bg-[#183b32] text-mint" : "bg-[#3c2428] text-coral"}`}>
-                        <span className="block truncate text-[9px] opacity-70">{entry.token || "Token"}</span><span>{formatShortRupiah(entry.amount)}</span>{entry.maintenance && <span className="ml-1.5 rounded bg-[#4b4125] px-1 text-[9px] text-gold">M</span>}
+                      {dateEntries.length > 0 && <div className="mt-2 space-y-1">
+                        {dateEntries.slice(0, 2).map((entry, index) => <div key={`${cell.key}-${index}`} className={`truncate rounded-md px-1.5 py-1 text-[10px] font-bold sm:text-[11px] ${entry.type === "profit" ? "bg-[#183b32] text-mint" : "bg-[#3c2428] text-coral"}`}>
+                          <span className="block truncate text-[9px] opacity-70">{entry.token || "Token"}</span><span>{formatShortRupiah(entry.amount)}</span>{entry.maintenance && <span className="ml-1.5 rounded bg-[#4b4125] px-1 text-[9px] text-gold">M</span>}
+                        </div>)}
+                        {dateEntries.length > 2 && <span className="block px-1 text-[9px] font-bold text-muted">+{dateEntries.length - 2} token lainnya</span>}
                       </div>}
-                      {!entry && cell.isCurrentMonth && <span className="absolute bottom-3 right-3 hidden text-muted opacity-0 transition group-hover:opacity-100 sm:block"><Plus size={14} /></span>}
+                      {dateEntries.length === 0 && cell.isCurrentMonth && <span className="absolute bottom-3 right-3 hidden text-muted opacity-0 transition group-hover:opacity-100 sm:block"><Plus size={14} /></span>}
                     </button>;
                   })}
                 </div>
@@ -496,6 +501,19 @@ export default function Index() {
                   </div>
                   <button onClick={() => setIsMobilePanelOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-[#22302a] hover:text-cloud xl:hidden" aria-label="Tutup detail"><X size={17} /></button>
                 </div>
+
+                {selectedDateEntries.length > 0 && <div className="mb-5 rounded-xl border border-line bg-[#101714] p-2">
+                  <div className="mb-2 flex items-center justify-between px-1">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Token di tanggal ini</span>
+                    <span className="text-[10px] font-bold text-mint">{selectedDateEntries.length} catatan</span>
+                  </div>
+                  <div className="space-y-1">
+                    {selectedDateEntries.map((entry, index) => <button key={`${selectedDate}-${index}`} onClick={() => selectDate(selectedDate, index)} className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[11px] transition ${selectedEntryIndex === index ? "bg-[#1b332c] text-mint" : "text-muted hover:bg-[#18221f] hover:text-cloud"}`}>
+                      <span className="max-w-[145px] truncate font-bold">{entry.token || "Token tanpa nama"}</span>
+                      <span className={entry.type === "profit" ? "text-mint" : "text-coral"}>{formatShortRupiah(entry.amount)}</span>
+                    </button>)}
+                  </div>
+                </div>}
 
                 <div className="mb-5 flex gap-1 rounded-xl bg-[#0e1512] p-1">
                   {(["profit", "loss"] as EntryType[]).map((item) => <button key={item} onClick={() => setEntryType(item)} className={`flex-1 rounded-lg px-2 py-2 text-[10px] font-bold transition ${entryType === item ? item === "profit" ? "bg-[#21483b] text-mint" : "bg-[#4a282e] text-coral" : "text-muted hover:text-cloud"}`}>{typeLabel(item)}</button>)}
@@ -522,7 +540,8 @@ export default function Index() {
                 </label>
                 <div className="flex gap-2">
                   {selectedEntry && <button onClick={deleteEntry} className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#56343a] text-coral transition hover:bg-[#3b252a]" aria-label="Hapus catatan"><Trash2 size={16} /></button>}
-                  <button onClick={saveEntry} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-mint px-4 text-xs font-black text-ink transition hover:bg-[#87edcd]">{savedNotice ? <><Check size={15} /> Tersimpan</> : <><Save size={15} /> Simpan catatan</>}</button>
+                  {selectedDateEntries.length > 0 && <button onClick={startNewEntry} className="flex h-11 items-center justify-center rounded-xl border border-line px-3 text-muted transition hover:border-mint hover:text-mint" aria-label="Tambah token"><Plus size={16} /></button>}
+                  <button onClick={saveEntry} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-mint px-4 text-xs font-black text-ink transition hover:bg-[#87edcd]">{savedNotice ? <><Check size={15} /> Tersimpan</> : <><Save size={15} /> {selectedEntryIndex === null ? "Tambah token" : "Simpan catatan"}</>}</button>
                 </div>
                 <div className="mt-6 border-t border-line pt-4">
                   <p className="flex items-center justify-between text-[11px] text-muted"><span>Total net {MONTHS[month]}</span><strong className={monthlyNet >= 0 ? "text-mint" : "text-coral"}>{formatRupiah(monthlyNet, true)}</strong></p>
